@@ -9,7 +9,7 @@ send email via MailJet SEND API
 Begin by installing the package through Composer. Run the following command in your terminal:
 
 ```bash
-composer require himanverma/mailjet-laravel-driver
+composer require andreipasat/mailjet-laravel-driver
 ```
 
 
