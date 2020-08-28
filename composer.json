@@ -11,7 +11,7 @@
         }
     ],
     "require": {
-        "php": ">=5.5.9",
+        "php": ">=7.3",
         "illuminate/support": "~5.5",
         "illuminate/mail": "~5.5",
         "mailjet/mailjet-apiv3-php" : ">=1.2.0"

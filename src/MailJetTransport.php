@@ -46,6 +46,18 @@ class MailJetTransport extends Transport {
         }
         return $to;
     }
+    
+    private function getReplyTo(Swift_Mime_SimpleMessage $message) {
+        $replyTo = $message->getReplyTo();
+        if ($replyTo) {
+            $email = array_key_first($replyTo);
+            return [
+                'Email' => $email,
+                'Name' => $replyTo[$email]
+            ];
+        }
+        return [];
+    }
 
     /**
      * Gets all the headers from the message
@@ -77,19 +89,59 @@ class MailJetTransport extends Transport {
     }
 
     /**
+     * Adds attachment to the message
+     *
+     * @param Swift_Mime_SimpleMessage $message
+     * @return array
+     */
+    private function addAttachments(Swift_Mime_SimpleMessage $message): array
+    {
+        $attachments = [];
+        if (count($children = $message->getChildren()) > 0) {
+            $i = 0;
+            foreach ($children as $child) {
+                if ($i++ == 0 && $child->getContentType() == 'text/plain') {
+                    $textpart = $child->getBody();
+                    continue;
+                }
+                $newattachment = [];
+                $newattachment['ContentType']   = $child->getContentType();
+                $newattachment['Filename']      = $child->getFilename();
+                $newattachment['Base64Content'] = base64_encode($child->getBody());
+                array_push($attachments, $newattachment);
+            }
+        }
+
+        return $attachments;
+    }
+
+    /**
      * {@inheritdoc}
      */
     public function send(Swift_Mime_SimpleMessage $message, &$failedRecipients = null) {
         $headers = $this->getHeaders($message);
+        
+        //to emails
         $toEmailsOnly = $this->getTo($message);
         $to = [];
-        foreach($toEmailsOnly as $t){
+        foreach ($toEmailsOnly as $t) {
             $to[] = [
                 "Email" => $t
             ];
         }
-        $mj = new \Mailjet\Client($this->userName, $this->secretKey,
-              true,['version' => 'v3.1']);
+        
+        //reply to emails
+        $replyTo = $this->getReplyTo($message);
+        
+        $mj = new \Mailjet\Client(
+            $this->userName,
+            $this->secretKey,
+            true,
+            ['version' => 'v3.1']
+        );
+
+        $attachments = $this->addAttachments($message);
+
         $body = [
             'Messages' => [
                 [
@@ -101,19 +153,22 @@ class MailJetTransport extends Transport {
                     'Subject' => $message->getSubject(),
                     'TextPart' => $message->getBody(),
                     'HTMLPart' => $message->getBody(),
+                    'Attachments' => $attachments,
                 ]
             ]
         ];
+        
+        if (!empty($replyTo)) {
+            $body['Messages'][0]['ReplyTo'] = $replyTo;
+        }
 
         $campaign = $this->getCustomHeader('X-Mailjet-Campaign');
-        if(!is_null($campaign))
-        {
+        if (!is_null($campaign)) {
             $body['Messages'][0]['CustomCampaign'] = $campaign;
         }
 
         $template = $this->getCustomHeader('X-MailjetLaravel-Template');
-        if(!is_null($template))
-        {
+        if (!is_null($template)) {
             $body['Messages'][0]['TemplateLanguage'] = true;
             $body['Messages'][0]['TemplateID'] = $template;
             $body['Messages'][0]['Variables'] = json_decode($this->getCustomHeader('X-MailjetLaravel-TemplateBody'));
@@ -124,11 +179,11 @@ class MailJetTransport extends Transport {
         }
 
         $response = $mj->post(Resources::$Email, ['body' => $body]);
-        if($response->getStatus() == 200){
+        if ($response->getStatus() == 200) {
             $result = $response->getBody();
-        }else{
+        } else {
             $result = $response->getBody();
-            Log::error('Mailjet Error: '.json_encode($result));
+            Log::error('Mailjet Error: ' . json_encode($result));
         }
         return $result;
     }
